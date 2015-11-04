@@ -14,59 +14,25 @@
 #define IP "127.0.0.1"
 #define MAXDATESIZE 100
 
-
-
-int main()
-{
 	int sockfd,newfd,numbytes,len,i;
 	struct sockaddr_in server_addr;
 	struct sockaddr_in client_addr;
 	char buf[MAXDATESIZE],msg[MAXDATESIZE];
 	socklen_t sin_size;
 	int YES = 1;
-	
 
-	if((sockfd = socket(AF_INET,SOCK_STREAM,0)) == -1)
-	{
-		perror("socket");
-		exit(1);
-	}
-
-	if(setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&YES,sizeof(int)) == -1)
-	{
-		perror("setsockopt");
-		exit(1);
-	}
-
-	server_addr.sin_family = AF_INET;
-	server_addr.sin_port = htons(PORT);
-	server_addr.sin_addr.s_addr = inet_addr(IP);//INADDR_ANY
-	bzero(&(server_addr.sin_zero),8);
-	int b;
-	sockfd = socket(AF_INET,SOCK_STREAM,0); 
-	b = bind(sockfd,(struct sockaddr *)&server_addr,sizeof(struct sockaddr));
-	if(b == -1)
-	{
-		perror("bind");
-		exit(1);
-	}
-	if(listen(sockfd,BACKLOG) == -1)
-	{
-		perror("listen");
-		exit(1);
-	}
-	else
-		printf("监听端口：13490\n");
-	
 	fd_set fdsr;
 	int maxsock,conn_amount,sel;
 	int client[BACKLOG];
 	struct timeval timev;
 
+void looprecv()
+{
+	
+
 	conn_amount = 0;
 	sin_size = sizeof(client_addr);
 	maxsock = sockfd;
-
 	while(1)
 	{
 		timev.tv_sec = 30;//设置超时
@@ -152,6 +118,10 @@ int main()
 		
 		}		
 	}	
+
+}
+void closecn()
+{
 	for(i = 0;i < BACKLOG;i++)//关闭所有连接
 	{
 		if(client[i] != 0)
@@ -159,6 +129,47 @@ int main()
 			close(client[i]);
 		}
 	}
+
+}
+int main()
+{
+	
+
+	if((sockfd = socket(AF_INET,SOCK_STREAM,0)) == -1)
+	{
+		perror("socket");
+		exit(1);
+	}
+
+	if(setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&YES,sizeof(int)) == -1)
+	{
+		perror("setsockopt");
+		exit(1);
+	}
+
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_port = htons(PORT);
+	server_addr.sin_addr.s_addr = inet_addr(IP);//INADDR_ANY
+	bzero(&(server_addr.sin_zero),8);
+	sockfd = socket(AF_INET,SOCK_STREAM,0); 
+	if(bind(sockfd,(struct sockaddr *)&server_addr,sizeof(struct sockaddr)) == -1)
+	{
+		perror("bind");
+		exit(1);
+	}
+	if(listen(sockfd,BACKLOG) == -1)
+	{
+		perror("listen");
+		exit(1);
+	}
+	else
+		printf("监听端口：%d\n",PORT);
+
+
+
+	looprecv();
+	
+	closecn();
 
 	return 0;
 }

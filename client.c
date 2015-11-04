@@ -14,30 +14,11 @@
 #define IP "127.0.0.1"
 #define MAXDATESIZE 100
 
-int main()
-{
 	int sockfd,numbytes,len,bytes_send;
 	char buf[MAXDATESIZE],msg[MAXDATESIZE];
 	struct sockaddr_in their_addr;
-	if((sockfd = socket(AF_INET,SOCK_STREAM,0)) == -1)
-	{
-		perror("socket");
-		exit(1);
-	}
-	their_addr.sin_family = AF_INET;
-	their_addr.sin_port = htons(PORT);
-	their_addr.sin_addr.s_addr = inet_addr(IP);
-	bzero(&(their_addr.sin_zero),8);
-	//整体上逻辑是，客户端先连接，然后发一个字符串过去，等一下，再关闭。
-	if(connect(sockfd,(struct sockaddr *)&their_addr,sizeof(struct sockaddr)) == -1)
-	{
-		perror("connect");
-		exit(1);
-	}
-	else
-	{
-		printf("connectd!\n");//在这里，加一个成功连接后的消息，来输入确实成功的消息
-	}
+void loopsend()
+{
 while(1)
 {
 	bzero(msg,sizeof(msg));
@@ -69,6 +50,32 @@ while(1)
 	}*/
 }
 //	sleep(2); //如果你send完以后马上关闭socket,那边会接收不到的，所以sleep2秒，这里一般是为了调试才加sleep的，真正应用的时候不能用sleep的，因为不会马上关闭socket.
+
+}
+
+int main()
+{
+	if((sockfd = socket(AF_INET,SOCK_STREAM,0)) == -1)
+	{
+		perror("socket");
+		exit(1);
+	}
+	their_addr.sin_family = AF_INET;
+	their_addr.sin_port = htons(PORT);
+	their_addr.sin_addr.s_addr = inet_addr(IP);
+	bzero(&(their_addr.sin_zero),8);
+	//整体上逻辑是，客户端先连接，然后发一个字符串过去，等一下，再关闭。
+	if(connect(sockfd,(struct sockaddr *)&their_addr,sizeof(struct sockaddr)) == -1)
+	{
+		perror("connect");
+		exit(1);
+	}
+	else
+	{
+		printf("connectd!\n");//在这里，加一个成功连接后的消息，来输入确实成功的消息
+	}
+	
+	loopsend();
 
 	close(sockfd);
 	
