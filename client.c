@@ -10,57 +10,93 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include "pb.pb-c.h"
 
 #define PORT 13490
 #define IP "127.0.0.1"
 #define MAXDATESIZE 100
-#define NAME 3
+#define LOGINPWD 16
 #define USER 10
 #define ACCOUNTSIZE 2
 #define TYPE 4
 
-/****************************struct*********************************/	
-	struct login
-	{
-		int loginname;
-		char passwd[16];
-	};
-	struct header
-	{
-		int length;
-		int cmd;//1登录，2加好友，3聊天，4群聊，5好友列表
-		int number;
-		int friend;
-	};
-	struct buffer
-	{
-		struct header head;
-		char buf[MAXDATESIZE];
-	};
-	struct massage
-	{
-		struct header head;
-		char msg[MAXDATESIZE];
-	};
-	struct frdlist
-	{
-		int numlist;
-	};
 
 /*******************************************************************/
 
-	int sockfd,numbytes,len,bytes_send,i,j,sel,tempchatnumber;
-	char buf0[MAXDATESIZE];	
-	fd_set fdsr;
+	int sockfd,numbytes,len,bytes_send,i,j,sel;
+	int loginnumber,friendnumber,tempchatnumber;
+	int symbol = 0;
+	char password[16];
+	char buf0[MAXDATESIZE],buf1[MAXDATESIZE];	
+	uint8_t * recvbuf;
 	struct timeval timev;
 	pthread_t recvthread;
 
-	struct login LOGIN;
-	struct buffer BUF;
-	struct massage MSG;
-	struct frdlist friend[USER];
+	Login LOGIN = LOGIN__INIT;
+	Buffer *BUF = NULL;
+	Buffer MSG = BUFFER__INIT;
+	void *buf = NULL;
 	struct sockaddr_in their_addr;
 
+/*******************************************************************/
+static int malloc_login_info(Login *LOGIN)
+{
+    LOGIN->passwd = (char*)malloc(LOGINPWD);
+    if (!LOGIN->passwd)
+    {
+    goto FAILED;
+    }
+    return 0;
+FAILED:
+    fprintf(stdout, "malloc error.errno:%u,reason:%s\n",
+        errno, strerror(errno));
+    return -1;
+}
+static void set_login_info(Login *LOGIN,int loginnumber,char* password,int pwdlen)
+{
+	LOGIN->loginname = loginnumber;
+	memcpy(LOGIN->passwd,password,pwdlen);
+	*(LOGIN->passwd+pwdlen) = '\0';
+}
+static void free_login(Login *LOGIN)
+{
+    if (LOGIN->passwd)
+    {
+    free(LOGIN->passwd);
+    LOGIN->passwd = NULL;
+    }
+}
+static int malloc_msg_info(Buffer *MSG)
+{
+    MSG->buf = (char*)malloc(MAXDATESIZE);
+    if (!MSG->buf)
+    {
+    goto FAILED;
+    }
+    return 0;
+FAILED:
+    fprintf(stdout, "malloc error.errno:%u,reason:%s\n",
+        errno, strerror(errno));
+    return -1;
+}
+static void set_msg_info(Buffer *MSG,int length,int cmd,int number,int friend,void *buf0)
+{
+	MSG->length = length;
+	MSG->cmd = cmd;
+	MSG->number = number;
+	MSG->friend_ = friend;
+	memcpy(MSG->buf,buf0,length);
+	*(MSG->buf+length) = '\0';
+}
+static void free_msg(Buffer *MSG)
+{
+	if (MSG->buf)
+	{
+		free(MSG->buf);
+		MSG->buf = NULL;
+	}
+}
+/*******************************************************************/
 
 /*************************loginaccount******************************/
 void loginaccount()
@@ -68,32 +104,47 @@ void loginaccount()
 while(1)
 {
 	printf("Name:");
-	scanf("%d",&LOGIN.loginname);
-	MSG.head.number = LOGIN.loginname;
+	scanf("%d",&loginnumber);
 
 	printf("Passwd:");
-	scanf("%s",LOGIN.passwd);
-	MSG.head.cmd = 1;
-	memcpy(MSG.msg,&LOGIN,sizeof(struct login));
-	if(send(sockfd,&MSG,sizeof(struct massage),0) == -1)
+	scanf("%s",password);
+	
+	malloc_login_info(&LOGIN);
+	set_login_info(&LOGIN,loginnumber,password,strlen(password));
+	len = login__get_packed_size(&LOGIN);
+    buf = malloc(len);
+    login__pack(&LOGIN, buf);
+    free_login(&LOGIN);
+    malloc_msg_info(&MSG);
+	set_msg_info(&MSG,len,1,loginnumber,0,buf);
+	free(buf);
+	
+	len = buffer__get_packed_size(&MSG);
+    buf = malloc(len);
+    buffer__pack(&MSG, buf);
+    free_msg(&MSG);
+	
+	if(send(sockfd,buf,len,0) == -1)
 	{
 		perror("send");
 		exit(1);
 	}
 	else
-	{
-	printf("验证已发送!\n");
-	}
+		printf("验证已发送!\n");
+	free(buf);
 	while(1)
 	{
-		if((strcmp(BUF.buf,"Login success!") == 0) || (strcmp(BUF.buf,"Infor error") == 0))
+		if(symbol == 1)
 		{
-			strcpy(buf0,BUF.buf);
-			break;
+			symbol = 0;
+//			if((bcmp(BUF->buf,"Login success!",14) == 0) || ((bcmp(BUF->buf,"Infor error",11) == 0)) || (bcmp(BUF->buf,"Already online",14) == 0))
+				break;
 		}
 	}
-	if(strcmp(buf0,"Login success!") == 0)
+	if(bcmp(BUF->buf,"Login success!",14) == 0)
 		break;
+	else
+		continue;
 }
 	printf("登录成功！\n");
 }
@@ -101,55 +152,83 @@ while(1)
 
 /**************************addfriend********************************/
 void addfriend()
-{	
+{
 	printf("请输入号码查找好友：");
-	bzero(MSG.msg,MAXDATESIZE);
-	scanf("%s",MSG.msg);
-	len = strlen(MSG.msg);
-	MSG.msg[len] = '\0';			
-	if(send(sockfd,&MSG,sizeof(struct massage),0) == -1)
+	bzero(buf0,MAXDATESIZE);
+	scanf("%d",&friendnumber);
+	memcpy(buf0,"addfriend",9);
+	len = strlen(buf0);
+	buf0[len] = '\0';
+	malloc_msg_info(&MSG);
+	set_msg_info(&MSG,len,2,loginnumber,friendnumber,buf0);
+	len = buffer__get_packed_size(&MSG);
+    buf = malloc(len);
+    buffer__pack(&MSG, buf);
+    free_msg(&MSG);
+	if(send(sockfd,buf,len,0) == -1)
 	{
 		perror("send");
 		exit(1);
 	}
+	free(buf);
 }
 /*******************************************************************/
 
 /**************************startchat********************************/
 void startrecvchat()
 {
-	while(1)
+while(1)
+{
+	bzero(buf0,MAXDATESIZE);
+	printf("sendmsg_to%d:",tempchatnumber);
+	scanf("%s",buf0);
+	len = strlen(buf0);
+	buf0[len] = '\0';
+	malloc_msg_info(&MSG);
+	set_msg_info(&MSG,len,3,loginnumber,tempchatnumber,buf0);
+	len = buffer__get_packed_size(&MSG);
+    buf = malloc(len);
+    buffer__pack(&MSG, buf);
+    free_msg(&MSG);
+	if(send(sockfd,buf,len,0) == -1)
 	{
-		bzero(MSG.msg,MAXDATESIZE);
-		MSG.head.friend = tempchatnumber;
-		printf("\nsendmsg%d:",MSG.head.friend);
-		scanf("%s",MSG.msg);
-		MSG.msg[strlen(MSG.msg)] = '\0';
-		if((bytes_send = send(sockfd,&MSG,sizeof(struct massage),0)) == -1)
-		{
-			perror("send");
-			exit(1);
-		}
-		else if(bcmp(MSG.msg,"exit",4) == 0)
-			break;
+		perror("send");
+		exit(1);
 	}
-
+	else if(bcmp(buf0,"exit",4) == 0)
+	{	
+		free(buf);
+		break;
+	}
+	free(buf);
+}
 }
 void startsendchat()
 {
 	while(1)
 	{
-		bzero(MSG.msg,MAXDATESIZE);
-		printf("\nsendmsg%d:",MSG.head.friend);
-		scanf("%s",MSG.msg);
-		MSG.msg[strlen(MSG.msg)] = '\0';
-		if((bytes_send = send(sockfd,&MSG,sizeof(struct massage),0)) == -1)
+		bzero(buf0,MAXDATESIZE);
+		printf("sendmsg_to%d:",friendnumber);
+		scanf("%s",buf0);
+		len = strlen(buf0);
+		buf0[len] = '\0';
+		malloc_msg_info(&MSG);
+		set_msg_info(&MSG,len,3,loginnumber,friendnumber,buf0);
+		len = buffer__get_packed_size(&MSG);
+    	buf = malloc(len);
+    	buffer__pack(&MSG, buf);
+    	free_msg(&MSG);
+		if(send(sockfd,buf,len,0) == -1)
 		{
 			perror("send");
 			exit(1);
 		}
-		else if(bcmp(MSG.msg,"exit",4) == 0)
+		else if(bcmp(buf0,"exit",4) == 0)
+		{	
+			free(buf);
 			break;
+		}
+		free(buf);
 	}
 }
 /*******************************************************************/
@@ -159,34 +238,29 @@ void groupchat()
 {
 	while(1)
 	{
-		bzero(MSG.msg,MAXDATESIZE);
-		printf("\ngroupchat:");
-		scanf("%s",MSG.msg);
-		MSG.msg[strlen(MSG.msg)] = '\0';
-		if((bytes_send = send(sockfd,&MSG,sizeof(struct massage),0)) == -1)
+		bzero(buf0,MAXDATESIZE);
+		printf("groupchat:");
+		scanf("%s",buf0);
+		len = strlen(buf0);
+		buf0[len] = '\0';
+		malloc_msg_info(&MSG);
+		set_msg_info(&MSG,len,4,loginnumber,0,buf0);
+		len = buffer__get_packed_size(&MSG);
+    	buf = malloc(len);
+    	buffer__pack(&MSG, buf);
+    	free_msg(&MSG);
+		if(send(sockfd,buf,len,0) == -1)
 		{
 			perror("send");
 			exit(1);
 		}
-		else if(bcmp(MSG.msg,"exit",4) == 0)
+		else if(bcmp(buf0,"exit",4) == 0)
+		{
+			free(buf);
 			break;
-	}
-}
-/*******************************************************************/
-
-/***************************friendlist******************************/
-void friendlist()
-{
-		bzero(MSG.msg,MAXDATESIZE);
-		memcpy(MSG.msg,"friendlist",10);
-		MSG.msg[10] = '\0';
-		if(send(sockfd,&MSG,sizeof(struct massage),0) == -1)
-		{
-			perror("send");
-			exit(1);
 		}
-		else
-			printf("请求好友列表成功！\n");
+		free(buf);
+	}
 }
 /*******************************************************************/
 
@@ -194,19 +268,25 @@ void friendlist()
 void sendchat()
 {
 	printf("请输入好友账号以开始聊天：");
-	bzero(MSG.msg,MAXDATESIZE);
-	scanf("%d",&MSG.head.friend);
-	memcpy(MSG.msg,"Chat! reply:Y/N",15);
-	MSG.msg[15] = '\0';
-	if((send(sockfd,&MSG,sizeof(struct massage),0)) == -1)
+	scanf("%d",&friendnumber);
+	bzero(buf0,MAXDATESIZE);
+	memcpy(buf0,"Chat! reply:Y/N",15);
+	buf0[15] = '\0';
+	malloc_msg_info(&MSG);
+	set_msg_info(&MSG,15,3,loginnumber,friendnumber,buf0);
+	len = buffer__get_packed_size(&MSG);
+    buf = malloc(len);
+    buffer__pack(&MSG, buf);
+    free_msg(&MSG);
+	if((send(sockfd,buf,len,0)) == -1)
 	{
 		perror("send");
 		exit(1);
 	}
 	else
 	{
-//	printf("send%d:%s\n",MSG.head.friend,MSG.msg);
-	startsendchat();
+		free(buf);
+		startsendchat();
 	}
 }
 /*******************************************************************/
@@ -217,48 +297,37 @@ void *looprecv()
 {	
 	while(1)
 	{
-		timev.tv_sec = 0;//设置超时
-		timev.tv_usec = 0;
-		sel = select(sockfd,&fdsr,NULL,NULL,&timev);//&timev);
-		if(sel < 0)
+		recvbuf = malloc(MAXDATESIZE*2);
+		if((numbytes = recv(sockfd,recvbuf,MAXDATESIZE*2,0)) == -1)
 		{
-			perror("select");
-			break;
+			perror("recv");
+			exit(1);
 		}
-		FD_SET(sockfd,&fdsr);
-		if(FD_ISSET(sockfd,&fdsr))
+		else
 		{
-			bzero(&BUF,sizeof(struct buffer));
-			if((numbytes = recv(sockfd,&BUF,sizeof(struct buffer),0)) == -1)
+			BUF = buffer__unpack(NULL, numbytes, recvbuf);
+			switch(BUF->cmd)
 			{
-				perror("recv");
-			}
-			else if(numbytes <= sizeof(struct buffer) && (strlen(BUF.buf) > 0))
-			{
-				switch(BUF.head.cmd)
-				{
-					case 0: printf("\n服务器：%s\n",BUF.buf);break;
-					case 1:	printf("\n服务器：%s\n",BUF.buf);break;
-					case 2:	printf("\n服务器：%s\n",BUF.buf);break;
-					case 3:	
-						{
-							printf("\n客户端%d：%s\n",BUF.head.number,BUF.buf);
-							tempchatnumber = BUF.head.number;
-							break;
-						}
-					case 4:printf("\n客户端%d：%s\n",BUF.head.number,BUF.buf);break;
-					case 5:
-						{
-							memcpy(friend,BUF.buf,sizeof(struct frdlist)*USER);
-							for(i = 0,j = 0;i < USER;i++)
-							{
-								if(friend[i].numlist != 0)
-									printf("friend%d：%d\n",++j,friend[i].numlist);
-							}
-						}
-				}
+				case 0: printf("\n服务器：%s\n",BUF->buf);break;
+				case 1:	
+					{
+//						memcpy(buf0,BUF->buf,BUF->length);
+						printf("\n服务器：%s\n",BUF->buf);
+						symbol = 1;
+						break;
+					}
+				case 2:	printf("\n服务器：%s\n",BUF->buf);break;
+				case 3:	
+					{
+						printf("\n客户端%d：%s\n",BUF->number,BUF->buf);
+						tempchatnumber = BUF->number;
+						break;
+					}
+				case 4:printf("\n客户端%d：%s\n",BUF->number,BUF->buf);break;
 			}
 		}
+		free(recvbuf);
+//		}
 	}
 	pthread_exit(NULL);
 }
@@ -283,41 +352,33 @@ void thread_wait()
 /*******************************************************************/
 void loop()
 {
+	loginaccount();
 while(1)
 {
-	bzero(MSG.msg,MAXDATESIZE);
+	bzero(buf0,MAXDATESIZE);
 	printf("客户端：");
-	scanf("%s",MSG.msg);
-	len = strlen(MSG.msg);
-	MSG.msg[len] = '\0';
+	scanf("%s",buf0);
+	len = strlen(buf0);
+	buf0[len] = '\0';
 
-		printf("send success！\n");//这里发送成功了也输出一条信息便于调试
-		if(bcmp(MSG.msg,"add",3) == 0)
-		{
-			MSG.head.cmd = 2;
-			addfriend();
-		}
-		else if(bcmp(MSG.msg,"chat",4) == 0)
-		{
-			MSG.head.cmd = 3;
-			sendchat();
-		}
-		else if((bcmp(MSG.msg,"Y",1) == 0) || (bcmp(MSG.msg,"y",1) == 0))
-		{
-			MSG.head.cmd = 3;
-			printf("开始聊天了\n");
-			startrecvchat();
-		}
-		else if(bcmp(MSG.msg,"groupchat",9) == 0)
-		{
-			MSG.head.cmd = 4;
-			groupchat();
-		}
-		else if(bcmp(MSG.msg,"friendlist",10) == 0)
-		{
-			MSG.head.cmd = 5;
-			friendlist();
-		}
+	if(bcmp(buf0,"/add",4) == 0)
+	{
+		printf("进入添加好友\n");
+		addfriend();
+	}
+	else if(bcmp(buf0,"/chat",5) == 0)
+	{
+		sendchat();
+	}
+	else if((strcmp(buf0,"Y") == 0) || (strcmp(buf0,"y") == 0))
+	{
+		printf("开始聊天了\n");
+		startrecvchat();
+	}
+	else if(bcmp(buf0,"/groupchat",10) == 0)
+	{
+		groupchat();
+	}
 }
 }
 /*******************************************************************/
@@ -348,7 +409,6 @@ int main()
 	pthread_mutex_t mut;
 	pthread_mutex_init(&mut,NULL);
 	thread_create();
-	loginaccount();
 	loop();
 
 

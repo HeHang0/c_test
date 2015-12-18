@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <pthread.h>
+#include "pb.pb-c.h"
 
 #define PORT 13490
 #define BACKLOG 10
@@ -22,44 +23,11 @@
 #define USERAGE 3
 	
 /******************************struct*******************************/
-	struct login
-	{
-		int loginname;
-		char passwd[LOGINNAME];
-	};
-	
-	struct header
-	{
-		int length;
-		int cmd;//1登录，2加好友，3聊天，4群聊，5好友列表
-		int number;
-		int friend;
-	};
-	
-	struct buffer
-	{
-		struct header head;
-		char buf[MAXDATESIZE];
-	};
-	struct massage
-	{
-		struct header head;
-		char msg[MAXDATESIZE];
-	};
-
-
-	struct userinfo
-	{
-		int number;
-		char name[USERNAME];
-		char sex[USERSEX];
-		char age[USERAGE];
-	};
-
 	struct frdlist
 	{
 		int numlist;
 	};
+
 	struct myfrd
 	{
 		int numfrd;
@@ -73,131 +41,105 @@
 /*******************************************************************/
 	
 /******************************declar*******************************/
-	int sockfd,newfd,len,i,j,k,l,m,n,tempnumber=0;
+	int sockfd,newfd,len,i,j,k,l,m,n;
 	struct sockaddr_in server_addr;
 	struct sockaddr_in client_addr;
 	socklen_t sin_size;
-	int YES = 1;
+	int YES = 1,symbol = 0;
 
-	fd_set fdsr,chatfdsr;
-	pthread_t chatthread[2],addfriendthread,recvthread;
+	fd_set fdsr;
+	pthread_t recvthread;
 	int maxsock,conn_amount,sel;
-	int client[BACKLOG],numbytes[USER];
-	char buf1[MAXDATESIZE];
+	int client[BACKLOG],numbytes;
+	char buf0[MAXDATESIZE];
+	int loginnumber;
+	char password[16];
 	
 	struct timeval timev;
-	struct login LOGIN;
-	struct login LOGIN0[USER];
-	struct buffer BUF[USER];
-	struct massage MSG;
-	struct userinfo user[USER];
+	Login *LOGIN = NULL;
+	Login LOGIN0[USER] = {LOGIN__INIT};
+	Buffer *BUF = NULL;
+	Buffer MSG = BUFFER__INIT;
+	void* buf = NULL;
 	struct myfrd friend[USER];
 	struct selectclient cltfd[USER];
 /*******************************************************************/
-
+static int malloc_login_info(Login *LOGIN)
+{
+    LOGIN->passwd = (char*)malloc(LOGINPWD);
+    if (!LOGIN->passwd)
+    {
+    goto FAILED;
+    }
+    return 0;
+FAILED:
+    fprintf(stdout, "malloc error.errno:%u,reason:%s\n",
+        errno, strerror(errno));
+    return -1;
+}
+static void set_login_info(Login *LOGIN,int loginnumber,char* password,int pwdlen)
+{
+	LOGIN->loginname = loginnumber;
+	memcpy(LOGIN->passwd,password,pwdlen);
+	*(LOGIN->passwd+pwdlen) = '\0';
+}
+static void free_login_info(Login *LOGIN)
+{
+    if (LOGIN->passwd)
+    {
+    free(LOGIN->passwd);
+    LOGIN->passwd = NULL;
+    }
+}
+static int malloc_msg_info(Buffer *MSG)
+{
+    MSG->buf = (char*)malloc(MAXDATESIZE);
+    if (!MSG->buf)
+    {
+    goto FAILED;
+    }
+    return 0;
+FAILED:
+    fprintf(stdout, "malloc error.errno:%u,reason:%s\n",
+        errno, strerror(errno));
+    return -1;
+}
+static void set_msg_info(Buffer *MSG,int length,int cmd,int number,int friend,void *buf0)
+{
+	MSG->length = length;
+	MSG->cmd = cmd;
+	MSG->number = number;
+	MSG->friend_ = friend;
+	memcpy(MSG->buf,buf0,length);
+	*(MSG->buf+length) = '\0';
+}
+static void free_msg(Buffer *MSG)
+{
+	if (MSG->buf)
+	{
+		free(MSG->buf);
+		MSG->buf = NULL;
+	}
+}
 /****************************USERINFO*******************************/
 void userinfo()
 {
-	LOGIN0[0].loginname = 11;
-	strcpy(LOGIN0[0].passwd,"123456");
-	LOGIN0[1].loginname = 12;
-	strcpy(LOGIN0[1].passwd,"123456");
-	LOGIN0[2].loginname = 13;
-	strcpy(LOGIN0[2].passwd,"123456");
-	LOGIN0[3].loginname = 14;
-	strcpy(LOGIN0[3].passwd,"123456");
-	LOGIN0[4].loginname = 15;
-	strcpy(LOGIN0[4].passwd,"123456");
-	LOGIN0[5].loginname = 16;
-	strcpy(LOGIN0[5].passwd,"123456");
-	LOGIN0[6].loginname = 17;
-	strcpy(LOGIN0[6].passwd,"123456");
-	LOGIN0[7].loginname = 18;
-	strcpy(LOGIN0[7].passwd,"123456");
-	LOGIN0[8].loginname = 19;
-	strcpy(LOGIN0[8].passwd,"123456");
-	LOGIN0[9].loginname = 20;
-	strcpy(LOGIN0[9].passwd,"123456");
-	
-	user[0].number = 11;
-	strcpy(user[0].name,"admin1");
-	strcpy(user[0].sex,"男");
-	strcpy(user[0].age,"20");
+	strcpy(password,"123456");
 
-	user[1].number = 12;	
-	strcpy(user[1].name,"admin2");
-	strcpy(user[1].sex,"女");
-	strcpy(user[1].age,"21");
-
-	user[2].number = 13;
-	strcpy(user[2].name,"admin3");
-	strcpy(user[2].sex,"男");
-	strcpy(user[2].age,"22");
-
-	user[3].number = 14;
-	strcpy(user[3].name,"admin2");
-	strcpy(user[3].sex,"男");
-	strcpy(user[3].age,"23");
-
-	user[4].number = 15;
-	strcpy(user[4].name,"admin5");
-	strcpy(user[4].sex,"女");
-	strcpy(user[4].age,"24");
-
-	user[5].number = 16;
-	strcpy(user[5].name,"admin6");
-	strcpy(user[5].sex,"男");
-	strcpy(user[5].age,"22");
-
-	user[6].number = 17;	
-	strcpy(user[6].name,"admin7");
-	strcpy(user[6].sex,"女");
-	strcpy(user[6].age,"26");
-
-	user[7].number = 18;
-	strcpy(user[7].name,"admin8");
-	strcpy(user[7].sex,"男");
-	strcpy(user[7].age,"20");
-
-	user[8].number = 19;
-	strcpy(user[8].name,"admin9");
-	strcpy(user[8].sex,"男");
-	strcpy(user[8].age,"23");
-
-	user[9].number = 20;
-	strcpy(user[9].name,"admin10");
-	strcpy(user[9].sex,"女");
-	strcpy(user[9].age,"24");
-
-	friend[0].numfrd = 11;
-	friend[1].numfrd = 12;
-	friend[2].numfrd = 13;
-	friend[3].numfrd = 14;
-	friend[4].numfrd = 15;
-	friend[5].numfrd = 16;
-	friend[6].numfrd = 17;
-	friend[7].numfrd = 18;
-	friend[8].numfrd = 19;
-	friend[9].numfrd = 20;
 	for(j = 0;j < USER;j++)
 	{
-		BUF[j].head.cmd = 0;
+		friend[j].numfrd = 11+j;
+		cltfd[j].clientacc = 11+j;
+		if(malloc_login_info(&LOGIN0[j]) == -1)
+		{
+			printf("申请内存不成功\n");
+			exit(0);
+		}
+		set_login_info(&LOGIN0[j],11+j,password,6);
 	for(k = 0;k < USER;k++)
 		friend[j].list[k].numlist = 0;
 	}
 	
-	cltfd[0].clientacc = 11;
-	cltfd[1].clientacc = 12;
-	cltfd[2].clientacc = 13;
-	cltfd[3].clientacc = 14;
-	cltfd[4].clientacc = 15;
-	cltfd[5].clientacc = 16;
-	cltfd[6].clientacc = 17;
-	cltfd[7].clientacc = 18;
-	cltfd[8].clientacc = 19;
-	cltfd[9].clientacc = 20;
-	
-	MSG.head.number = 0;
 
 }
 /*******************************************************************/
@@ -205,123 +147,179 @@ void userinfo()
 /*****************************LOGIN*********************************/
 void clientlogin()
 {
-	memcpy(&LOGIN,BUF[j].buf,sizeof(struct login));
+	if(LOGIN != NULL)
+	{
+		free(LOGIN);
+		LOGIN = NULL;
+	}
+	buf = malloc(BUF->length);
+	strcpy(buf,BUF->buf);
+	LOGIN = login__unpack(NULL, BUF->length, buf);
+	free(buf);
 	for(k = 0;k < USER;k++)
 	{
-		if((LOGIN.loginname == LOGIN0[k].loginname) && (bcmp(LOGIN.passwd,LOGIN0[k].passwd,6) == 0))
+		if((LOGIN->loginname == LOGIN0[k].loginname) && (bcmp(LOGIN->passwd,LOGIN0[k].passwd,6) == 0))
 		{
-			bzero(&MSG,sizeof(struct massage));
-			MSG.head.number = 0;MSG.head.cmd = 1;
-			memcpy(MSG.msg,"Login success!",14);
-			MSG.msg[14] = '\0';
-			if(send(newfd,&MSG,sizeof(struct massage),0) == -1)
+			bzero(&buf0,MAXDATESIZE);
+			memcpy(buf0,"Login success!",14);
+			buf0[14] = '\0';
+			malloc_msg_info(&MSG);
+			
+			set_msg_info(&MSG,14,1,0,0,buf0);
+			len = buffer__get_packed_size(&MSG);
+			
+	    	buf = malloc(len);
+	    	buffer__pack(&MSG, buf);
+	    	free_msg(&MSG);
+
+			if(send(newfd,buf,len,0) == -1)
 			{
 				perror("send");
-				
+				exit(1);
 			}
 			else
-			for(l = 0;l < USER;l++)
 			{
-				if(LOGIN.loginname == cltfd[l].clientacc)
+				for(l = 0;l < USER;l++)
 				{
-					cltfd[l].clientfd = client[j];
-					printf("客户端%d已登录%d！\n",cltfd[l].clientacc,cltfd[l].clientfd);
-					break;
+					if(LOGIN->loginname == cltfd[l].clientacc && cltfd[l].clientfd == 0)
+					{
+						cltfd[l].clientfd = newfd;
+						printf("客户端%d已登录%d！\n",cltfd[l].clientacc,cltfd[l].clientfd);
+						break;
+					}
 				}
 			}
+			free(buf);
 			break;
 		}
 	}
-	if(k == USER)
+	if(l == USER)
 	{
-		bzero(&MSG,sizeof(struct massage));
-		MSG.head.number = 0;MSG.head.cmd = 1;
-		memcpy(MSG.msg,"Infor error",12);
-		MSG.msg[12] = '\0';
-		if(send(newfd,&MSG,sizeof(struct buffer),0) == -1)
+		bzero(buf0,MAXDATESIZE);
+		memcpy(buf0,"Already online",14);
+		buf0[14] = '\0';
+		malloc_msg_info(&MSG);
+		set_msg_info(&MSG,14,1,0,0,buf0);
+		len = buffer__get_packed_size(&MSG);
+    	buf = malloc(len);
+    	buffer__pack(&MSG, buf);
+    	free_msg(&MSG);
+		if(send(newfd,buf,len,0) == -1)
 		{
 			perror("send");
 		}
-		printf("客户端(%d) 验证失败%d\n",j,client[j]);
+		free(buf);
+		printf("账号已在线！\n");
+	}
+	if(k == USER)
+	{
+		bzero(buf0,MAXDATESIZE);
+		memcpy(buf0,"Infor error",12);
+		buf0[12] = '\0';
+		malloc_msg_info(&MSG);
+		set_msg_info(&MSG,12,1,0,0,buf0);
+		len = buffer__get_packed_size(&MSG);
+    	buf = malloc(len);
+    	buffer__pack(&MSG, buf);
+    	free_msg(&MSG);
+		if(send(newfd,buf,len,0) == -1)
+		{
+			perror("send");
+		}
+		free(buf);
+		printf("客户端 验证失败%d\n",newfd);
 	}
 }
 /*******************************************************************/	
 
 /************************addfriend**********************************/
 void addfriend()
-{
-	MSG.head.cmd = 2;
-	while(1)
-	{	
-		tempnumber = (BUF[j].buf[0] - '0')*10+(BUF[j].buf[1] - '0');
-		for(n = 0;n < USER;n++)
+{	
+		for(m = 0;m < USER;m++)
 		{
-			if(tempnumber == cltfd[n].clientacc)
+			if(cltfd[m].clientacc == BUF->number)
 				break;
 		}
-		if(n < USER)
-		{
 		for(n = 0;n < USER;n++)
 		{
-			if(tempnumber == user[n].number)
+			if(cltfd[n].clientacc == BUF->friend_)
+				break;
+		}
+		for(j = 0;j < USER;j++)
+		{
+			if(BUF->friend_ == LOGIN0[j].loginname)
 			{
 			for(k = 0;k < USER;k++)
 			{
-				if(friend[k].numfrd == BUF[j].head.number)
+				if(friend[k].numfrd == BUF->number)
 				{
 				for(l = 0;l < USER;l++)
 				{
-					if(friend[k].list[l].numlist == tempnumber)
+					if(friend[k].list[l].numlist == BUF->friend_)
 					{
-						memcpy(MSG.msg,"already in list!",16);
-						MSG.msg[16] = '\0';
-						if(send(client[j],&MSG,sizeof(struct massage),0) == -1)
-						{
-							perror("send");
-						}
-						printf("already in list!\n");
-						break;
-					}
-					else if(friend[k].list[l].numlist == 0)
-					{
-						friend[k].list[l].numlist = tempnumber;
-						memcpy(MSG.msg,"add success!",12);
-						MSG.msg[12] = '\0';
-						if(send(client[j],&MSG,sizeof(struct massage),0) == -1)
-						{
-							perror("send");
-						}
-						for(m = 0;m < USER;m++)
-						{
-							if(cltfd[m].clientacc == tempnumber)
-							{
-								memcpy(MSG.msg,"already add by friend!",22);
-								MSG.msg[22] = '\0';
-								if(send(cltfd[m].clientfd,&MSG,sizeof(struct massage),0) == -1)
-								{
-									perror("send");
-								}
-								else
-									break;
-							}
-						}
-						break;
-					}
-					else
-					{
-						if(l == (USER-1))
-						{
-						memcpy(MSG.msg,"not found!",10);
-						MSG.msg[10] = '\0';
-						if(send(client[j],&MSG,sizeof(struct massage),0))
+						bzero(buf0,MAXDATESIZE);
+						memcpy(buf0,"already in list!",16);
+						buf0[16] = '\0';
+						malloc_msg_info(&MSG);
+						set_msg_info(&MSG,16,2,BUF->number,BUF->friend_,buf0);
+						len = buffer__get_packed_size(&MSG);
+    					buf = malloc(len);
+    					buffer__pack(&MSG, buf);
+    					free_msg(&MSG);
+						if(send(cltfd[m].clientfd,buf,len,0) == -1)
 						{
 							perror("send");
 						}
 						else
-						{
 							break;
+						free(buf);
+					}
+				}
+				if(l == USER)
+				{
+					for(l = 0;l < USER;l++)
+					if(friend[k].list[l].numlist == 0)
+					{
+						friend[k].list[l].numlist = BUF->friend_;
+						bzero(buf0,MAXDATESIZE);
+						memcpy(buf0,"add success!",12);
+						buf0[12] = '\0';
+						malloc_msg_info(&MSG);
+						set_msg_info(&MSG,12,2,BUF->number,BUF->friend_,buf0);
+						len = buffer__get_packed_size(&MSG);
+    					buf = malloc(len);
+    					buffer__pack(&MSG, buf);
+    					free_msg(&MSG);
+						if(send(cltfd[m].clientfd,buf,len,0) == -1)
+						{
+							perror("send");
 						}
+						free(buf);
+						for(m = 0;m < USER;m++)
+						{
+							if(cltfd[m].clientacc == BUF->friend_)
+							{
+								bzero(buf0,MAXDATESIZE);
+								memcpy(buf0,"already add by friend!",22);
+								buf0[22] = '\0';
+								malloc_msg_info(&MSG);
+								set_msg_info(&MSG,22,2,BUF->friend_,BUF->number,buf0);
+								len = buffer__get_packed_size(&MSG);
+    							buf = malloc(len);
+    							buffer__pack(&MSG, buf);
+    							free_msg(&MSG);
+								if(send(cltfd[n].clientfd,buf,len,0) == -1)
+								{
+									perror("send");
+								}
+								else
+								{
+									free(buf);
+									break;
+								}
+							}
 						}
+						break;
 					}
 				}
 				break;
@@ -329,90 +327,103 @@ void addfriend()
 			}
 			break;
 			}
-			else if(n == (USER-1))
-			{
-				memcpy(MSG.msg,"No user!",8);
-				MSG.msg[8] = '\0';
-				if(send(client[i],&MSG,sizeof(struct massage),0))
-				{
-					perror("send");
-				}
-				else
-					break;
-			}
 		}
-		break;
-		}
-	}
-}
-
-/*******************************************************************/
-
-/***************************friendlist*****************************/
-void friendlist()
-{
-	for(n = 0;n < USER;n++)
-	{
-		if(BUF[j].head.number == friend[n].numfrd)
-		{
-			MSG.head.cmd = 5;
-			bzero(MSG.msg,MAXDATESIZE);
-			memcpy(MSG.msg,friend[n].list,sizeof(struct frdlist)*USER);
-			MSG.msg[sizeof(struct frdlist)*USER] = '\0';
-			if((send(client[j],&MSG,sizeof(struct massage),0)) == -1)
+		if(j == USER)
+		{				
+			bzero(buf0,MAXDATESIZE);
+			memcpy(buf0,"not found!",10);
+			buf0[10] = '\0';
+			malloc_msg_info(&MSG);
+			set_msg_info(&MSG,10,2,BUF->number,BUF->friend_,buf0);
+			len = buffer__get_packed_size(&MSG);
+    		buf = malloc(len);
+    		buffer__pack(&MSG, buf);
+    		free_msg(&MSG);
+			if(send(cltfd[m].clientfd,buf,len,0) == -1)
 			{
 				perror("send");
 			}
-			for(k = 0,l = 0;k < USER;k++)
-			{
-				if(friend[n].list[k].numlist != 0)
-					printf("friend%d ：%d\n",++l,friend[n].list[k].numlist);
-			}
-			if(l == 0)
-			{
-				bzero(MSG.msg,MAXDATESIZE);
-				MSG.head.cmd = 0;
-				memcpy(MSG.msg,"NO friend!",10);
-				MSG.msg[10] = '\0';
-				if((send(client[j],&MSG,sizeof(struct massage),0)) == -1)
-				{
-					perror("send");
-				}	
-			}
-			break;
+			free(buf);
 		}
-		
-	}
 }
+
 /*******************************************************************/
 
 /****************************chat***********************************/
 void chat()
 {
+	for(m = 0;m < USER;m++)
+	{
+		if(cltfd[m].clientacc == BUF->number)
+			break;
+	}
+	for(n = 0;n < USER;n++)
+	{
+		if(cltfd[n].clientacc == BUF->friend_)
+			break;
+	}
 	for(k = 0;k < USER;k++)
 	{
-		if((BUF[j].head.friend == cltfd[k].clientacc) && cltfd[k].clientfd > 2)
+		if(BUF->number == friend[k].numfrd)
+			break;
+	}	
+	for(l = 0;l < USER;l++)
+		if(friend[k].list[l].numlist == BUF->friend_)
+			break;
+	if(l < USER)			
+	{
+		for(n = 0;n < USER;n++)
 		{
-			if(send(cltfd[k].clientfd,&BUF[j],sizeof(struct buffer),0) == -1)
-			{
-				perror("send");
-			}
-			else
-			{
+			if(cltfd[n].clientacc == BUF->friend_)
 				break;
-			}
 		}
-		else if(k == USER)
+		if((n < USER) && (cltfd[n].clientfd > 2))
 		{
-			bzero(&MSG,sizeof(struct massage));
-			MSG.head.cmd = 3;MSG.head.number = 0;MSG.head.friend = BUF[j].head.friend;
-			memcpy(MSG.msg,"Not friend or friend not online",31);
-			MSG.msg[31] = '\0';
-			if((send(client[j],&MSG,sizeof(struct massage),0)) == -1)
+			len = buffer__get_packed_size(BUF);
+			buf = malloc(len);
+			buffer__pack(BUF,buf);
+			if(send(cltfd[n].clientfd,buf,len,0) == -1)
 			{
 				perror("send");
 			}
+			free(buf);
 		}
+		else if(n == USER)
+		{
+			bzero(&buf0,MAXDATESIZE);
+			memcpy(buf0,"Friend not online",17);
+			buf0[17] = '\0';
+			malloc_msg_info(&MSG);
+			set_msg_info(&MSG,17,3,0,BUF->friend_,buf0);
+			len = buffer__get_packed_size(&MSG);
+			buf = malloc(len);
+			buffer__pack(&MSG, buf);
+			free_msg(&MSG);
+			if((send(cltfd[m].clientfd,buf,len,0)) == -1)
+			{
+				perror("send");
+				exit(1);
+			}
+			free(buf);
+		}
+	}
+	else
+	{
+		bzero(&buf0,MAXDATESIZE);
+		memcpy(buf0,"No friend",9);
+		buf0[9] = '\0';
+		malloc_msg_info(&MSG);
+		set_msg_info(&MSG,9,3,0,BUF->friend_,buf0);
+		len = buffer__get_packed_size(&MSG);
+		buf = malloc(len);
+		buffer__pack(&MSG, buf);
+		free_msg(&MSG);
+		if((send(cltfd[m].clientfd,buf,len,0)) == -1)
+		{
+			perror("send");
+			exit(1);
+		}
+		free(buf);
 	}
 }
 
@@ -421,24 +432,25 @@ void chat()
 /***************************groupchat*******************************/
 void groupchat()
 {
+	for(m = 0;m < USER;m++)
+	{
+		if(cltfd[m].clientacc == BUF->number)
+			break;
+	}
 	for(k = 0;k <= conn_amount;k++)
 	{
-		if(client[k] > 0)
+		if(client[k] > 0 && client[k] != cltfd[m].clientfd)
 		{
-			if(send(client[k],&BUF[j],sizeof(struct buffer),0) == -1)
+			len = buffer__get_packed_size(BUF);
+			buf = malloc(len);
+			buffer__pack(BUF,buf);
+			if(send(client[k],buf,len,0) == -1)
 			{
 				perror("send");
-			}	
-		}
-		else if(k == USER)
-		{
-			bzero(&MSG,sizeof(struct massage));
-			MSG.head.cmd = 4;MSG.head.number = 0;MSG.head.friend = BUF[j].head.friend;
-			memcpy(MSG.msg,"Not user online!",16);
-			MSG.msg[16] = '\0';
-			if((send(client[j],&MSG,sizeof(struct massage),0)) == -1)
+			}
+			else
 			{
-				perror("send");
+				free(buf);
 			}
 		}
 	}
@@ -476,16 +488,19 @@ void *looprecv()
 		{			
 			if(FD_ISSET(client[i],&fdsr) && (client[i] > 0))
 			{
-				bzero(&BUF[i],sizeof(struct buffer));
-				if((numbytes[i] = recv(client[i],&BUF[i],sizeof(struct buffer),0)) == -1)
+				buf = malloc(MAXDATESIZE*2);
+				if((numbytes = recv(client[i],buf,MAXDATESIZE*2,0)) == -1)
 				{
 					perror("recv");
 				}
-				else if(numbytes[i] == 0)
+				else if(numbytes == 0)
 				{
 					printf("客户端(%d) 关闭\n",i);
 					close(client[i]);
 					FD_CLR(client[i],&fdsr);
+					for(j = 0;j < USER;j++)
+						if(client[i] == cltfd[j].clientfd)
+							cltfd[j].clientfd = 0;
 					for(;i<conn_amount;i++)
 					{
 						client[i] = client[i+1];
@@ -493,6 +508,13 @@ void *looprecv()
 //					client[i] = 0;
 					conn_amount--;
 				}
+				else
+				{
+
+					BUF = buffer__unpack(NULL, numbytes, buf);
+					symbol = 1;
+				}
+				free(buf);
 			}
 		}
 		if(FD_ISSET(sockfd,&fdsr))//检测是否有新客户端进入。
@@ -515,9 +537,7 @@ void *looprecv()
 			else
 			{
 				printf("达到最大连接数，退出");
-//				send(newfd,"bye",4,0);
 				close(newfd);
-//				break;
 			}
 	
 		}	
@@ -552,44 +572,35 @@ void loop()
 {
 while(1)
 {
-for(j = 0;j <= conn_amount;j++)
-	if((strlen(BUF[j].buf) > 0) && (client[j] > 0))
-	{
-		switch(BUF[j].head.cmd)
+	if(symbol)
+		switch(BUF->cmd)
 		{
 
 			case 1:
 				{
 					clientlogin();
-					BUF[j].head.cmd = 0;
+					symbol = 0;
 					break;
 				}
 			case 2:
 				{
 					addfriend();
-					BUF[j].head.cmd = 0;
+					symbol = 0;
 					break;
 				}
 			case 3:
 				{
 					chat();
-					BUF[j].head.cmd = 0;
+					symbol = 0;
 					break;
 				}
 			case 4:
 				{
 					groupchat();
-					BUF[j].head.cmd = 0;
-					break;
-				}
-			case 5:
-				{
-					friendlist();
-					BUF[j].head.cmd = 0;
+					symbol = 0;
 					break;
 				}
 		}
-	}
 }
 }
 /*******************************************************************/
@@ -631,7 +642,8 @@ int main()
 	pthread_mutex_init(&mut,NULL);
 	recvthread_create();
 	loop();
-	
+	for(i = 0;i < USER;i++)
+		free_login_info(&LOGIN0[i]);
 	closecn();
 
 	return 0;

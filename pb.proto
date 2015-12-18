@@ -1,0 +1,13 @@
+message login
+{
+	required int32 loginname = 1;
+	required string passwd = 2;
+}
+message buffer
+{
+	required int32 length = 1;
+	required int32 cmd = 2;//1登录，2加好友，3聊天，4群聊，5好友列表
+	required int32 number = 3;
+	required int32 friend = 4;
+	required string buf = 5;
+}
