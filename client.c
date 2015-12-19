@@ -23,14 +23,14 @@
 
 /*******************************************************************/
 
-	int sockfd,numbytes,len,bytes_send,i,j,sel;
-	int loginnumber,friendnumber,tempchatnumber;
+	int sockfd,numbytes,len,i,j,sel;
+	int loginnumber = 0,friendnumber = 0,tempchatnumber = 0;
 	int symbol = 0;
 	char password[16];
-	char buf0[MAXDATESIZE],buf1[MAXDATESIZE];	
+	char writebuf[MAXDATESIZE];	
 	uint8_t * recvbuf;
 	struct timeval timev;
-	pthread_t recvthread;
+	pthread_t thread;
 
 	Login LOGIN = LOGIN__INIT;
 	Buffer *BUF = NULL;
@@ -79,13 +79,13 @@ FAILED:
         errno, strerror(errno));
     return -1;
 }
-static void set_msg_info(Buffer *MSG,int length,int cmd,int number,int friend,void *buf0)
+static void set_msg_info(Buffer *MSG,int length,int cmd,int number,int friend,void *writebuf)
 {
 	MSG->length = length;
 	MSG->cmd = cmd;
 	MSG->number = number;
 	MSG->friend_ = friend;
-	memcpy(MSG->buf,buf0,length);
+	memcpy(MSG->buf,writebuf,length);
 	*(MSG->buf+length) = '\0';
 }
 static void free_msg(Buffer *MSG)
@@ -103,6 +103,13 @@ void loginaccount()
 {
 while(1)
 {
+	if((symbol == 1) && (bcmp(BUF->buf,"Login success!",14) == 0))
+	{
+		symbol = 0;
+			break;
+	}
+	else
+	{
 	printf("Name:");
 	scanf("%d",&loginnumber);
 
@@ -132,19 +139,8 @@ while(1)
 	else
 		printf("验证已发送!\n");
 	free(buf);
-	while(1)
-	{
-		if(symbol == 1)
-		{
-			symbol = 0;
-//			if((bcmp(BUF->buf,"Login success!",14) == 0) || ((bcmp(BUF->buf,"Infor error",11) == 0)) || (bcmp(BUF->buf,"Already online",14) == 0))
-				break;
-		}
+	sleep(1);
 	}
-	if(bcmp(BUF->buf,"Login success!",14) == 0)
-		break;
-	else
-		continue;
 }
 	printf("登录成功！\n");
 }
@@ -154,13 +150,13 @@ while(1)
 void addfriend()
 {
 	printf("请输入号码查找好友：");
-	bzero(buf0,MAXDATESIZE);
 	scanf("%d",&friendnumber);
-	memcpy(buf0,"addfriend",9);
-	len = strlen(buf0);
-	buf0[len] = '\0';
+	bzero(writebuf,MAXDATESIZE);
+	memcpy(writebuf,"addfriend",9);
+	len = strlen(writebuf);
+	writebuf[len] = '\0';
 	malloc_msg_info(&MSG);
-	set_msg_info(&MSG,len,2,loginnumber,friendnumber,buf0);
+	set_msg_info(&MSG,len,2,loginnumber,friendnumber,writebuf);
 	len = buffer__get_packed_size(&MSG);
     buf = malloc(len);
     buffer__pack(&MSG, buf);
@@ -170,97 +166,10 @@ void addfriend()
 		perror("send");
 		exit(1);
 	}
+	else
+	printf("添加好友\n");
 	free(buf);
-}
-/*******************************************************************/
-
-/**************************startchat********************************/
-void startrecvchat()
-{
-while(1)
-{
-	bzero(buf0,MAXDATESIZE);
-	printf("sendmsg_to%d:",tempchatnumber);
-	scanf("%s",buf0);
-	len = strlen(buf0);
-	buf0[len] = '\0';
-	malloc_msg_info(&MSG);
-	set_msg_info(&MSG,len,3,loginnumber,tempchatnumber,buf0);
-	len = buffer__get_packed_size(&MSG);
-    buf = malloc(len);
-    buffer__pack(&MSG, buf);
-    free_msg(&MSG);
-	if(send(sockfd,buf,len,0) == -1)
-	{
-		perror("send");
-		exit(1);
-	}
-	else if(bcmp(buf0,"exit",4) == 0)
-	{	
-		free(buf);
-		break;
-	}
-	free(buf);
-}
-}
-void startsendchat()
-{
-	while(1)
-	{
-		bzero(buf0,MAXDATESIZE);
-		printf("sendmsg_to%d:",friendnumber);
-		scanf("%s",buf0);
-		len = strlen(buf0);
-		buf0[len] = '\0';
-		malloc_msg_info(&MSG);
-		set_msg_info(&MSG,len,3,loginnumber,friendnumber,buf0);
-		len = buffer__get_packed_size(&MSG);
-    	buf = malloc(len);
-    	buffer__pack(&MSG, buf);
-    	free_msg(&MSG);
-		if(send(sockfd,buf,len,0) == -1)
-		{
-			perror("send");
-			exit(1);
-		}
-		else if(bcmp(buf0,"exit",4) == 0)
-		{	
-			free(buf);
-			break;
-		}
-		free(buf);
-	}
-}
-/*******************************************************************/
-
-/***************************groupchat*******************************/
-void groupchat()
-{
-	while(1)
-	{
-		bzero(buf0,MAXDATESIZE);
-		printf("groupchat:");
-		scanf("%s",buf0);
-		len = strlen(buf0);
-		buf0[len] = '\0';
-		malloc_msg_info(&MSG);
-		set_msg_info(&MSG,len,4,loginnumber,0,buf0);
-		len = buffer__get_packed_size(&MSG);
-    	buf = malloc(len);
-    	buffer__pack(&MSG, buf);
-    	free_msg(&MSG);
-		if(send(sockfd,buf,len,0) == -1)
-		{
-			perror("send");
-			exit(1);
-		}
-		else if(bcmp(buf0,"exit",4) == 0)
-		{
-			free(buf);
-			break;
-		}
-		free(buf);
-	}
+	symbol = 0;
 }
 /*******************************************************************/
 
@@ -269,11 +178,11 @@ void sendchat()
 {
 	printf("请输入好友账号以开始聊天：");
 	scanf("%d",&friendnumber);
-	bzero(buf0,MAXDATESIZE);
-	memcpy(buf0,"Chat! reply:Y/N",15);
-	buf0[15] = '\0';
+	bzero(writebuf,MAXDATESIZE);
+	memcpy(writebuf,"Chat! reply:Y/N",15);
+	writebuf[15] = '\0';
 	malloc_msg_info(&MSG);
-	set_msg_info(&MSG,15,3,loginnumber,friendnumber,buf0);
+	set_msg_info(&MSG,15,3,loginnumber,friendnumber,writebuf);
 	len = buffer__get_packed_size(&MSG);
     buf = malloc(len);
     buffer__pack(&MSG, buf);
@@ -286,11 +195,56 @@ void sendchat()
 	else
 	{
 		free(buf);
-		startsendchat();
+		symbol = 4;
 	}
 }
 /*******************************************************************/
 
+/**************************startchat********************************/
+void startchat()
+{
+if(strlen(writebuf) > 0)
+{
+	malloc_msg_info(&MSG);
+	set_msg_info(&MSG,len,3,loginnumber,tempchatnumber,writebuf);
+	len = buffer__get_packed_size(&MSG);
+    buf = malloc(len);
+    buffer__pack(&MSG, buf);
+    free_msg(&MSG);
+	if(send(sockfd,buf,len,0) == -1)
+	{
+		perror("send");
+		exit(1);
+	}
+	else if(bcmp(writebuf,"exit",4) == 0)	
+		symbol = 0;
+	free(buf);
+}
+}
+/*******************************************************************/
+
+/***************************groupchat*******************************/
+void groupchat()
+{
+if(strlen(writebuf) > 0)
+{
+	malloc_msg_info(&MSG);
+	set_msg_info(&MSG,len,4,loginnumber,0,writebuf);
+	len = buffer__get_packed_size(&MSG);
+   	buf = malloc(len);
+   	buffer__pack(&MSG, buf);
+   	free_msg(&MSG);
+	if(send(sockfd,buf,len,0) == -1)
+	{
+		perror("send");
+		exit(1);
+	}
+	else if(bcmp(writebuf,"exit",4) == 0)
+		symbol = 0;
+	free(buf);
+}
+}
+/*******************************************************************/
 
 /****************************thread*********************************/
 void *looprecv()
@@ -311,7 +265,6 @@ void *looprecv()
 				case 0: printf("\n服务器：%s\n",BUF->buf);break;
 				case 1:	
 					{
-//						memcpy(buf0,BUF->buf,BUF->length);
 						printf("\n服务器：%s\n",BUF->buf);
 						symbol = 1;
 						break;
@@ -327,57 +280,81 @@ void *looprecv()
 			}
 		}
 		free(recvbuf);
-//		}
 	}
 	pthread_exit(NULL);
 }
 void thread_create()
 {
-	bzero(&recvthread,sizeof(recvthread));
-	if(pthread_create(&recvthread, NULL, looprecv, NULL) != 0)
-		printf("线程recvthread创建失败!\n");
-//	else
-//		printf("线程recvthread创建成功!\n");
+	bzero(&thread,sizeof(thread));
+	if(pthread_create(&thread, NULL, looprecv, NULL) != 0)
+		printf("线程looprecv创建失败!\n");
 }
 void thread_wait()
 {
-	if(recvthread != 0)
+	if(thread != 0)
 	{
-		pthread_join(recvthread,NULL);
-		printf("线程recvthread已经结束\n");
+		pthread_join(thread,NULL);
+		printf("线程looprecv已经结束\n");
 	}
 }
+
 /*******************************************************************/
 
 /*******************************************************************/
 void loop()
 {
-	loginaccount();
 while(1)
 {
-	bzero(buf0,MAXDATESIZE);
+	bzero(writebuf,MAXDATESIZE);
 	printf("客户端：");
-	scanf("%s",buf0);
-	len = strlen(buf0);
-	buf0[len] = '\0';
+	scanf("%s",writebuf);
+	len = strlen(writebuf);
+	writebuf[len] = '\0';
 
-	if(bcmp(buf0,"/add",4) == 0)
+	if(bcmp(writebuf,"/add",4) == 0)
 	{
-		printf("进入添加好友\n");
-		addfriend();
+		symbol = 2;
+		bzero(writebuf,MAXDATESIZE);
 	}
-	else if(bcmp(buf0,"/chat",5) == 0)
+	else if(bcmp(writebuf,"/chat",5) == 0)
 	{
-		sendchat();
+		symbol = 3;
+		bzero(writebuf,MAXDATESIZE);
 	}
-	else if((strcmp(buf0,"Y") == 0) || (strcmp(buf0,"y") == 0))
+	else if((strcmp(writebuf,"Y") == 0) || (strcmp(writebuf,"y") == 0))
 	{
-		printf("开始聊天了\n");
-		startrecvchat();
+		symbol = 4;
+		printf("Start chat:");
+		bzero(writebuf,MAXDATESIZE);
 	}
-	else if(bcmp(buf0,"/groupchat",10) == 0)
+	else if(bcmp(writebuf,"/groupchat",10) == 0)
 	{
-		groupchat();
+		symbol = 5;
+		printf("Start groupchat:");
+		bzero(writebuf,MAXDATESIZE);
+	}
+	switch(symbol)
+	{
+		case 2:
+		{
+			addfriend();
+			break;
+		}
+		case 3:
+		{
+			sendchat();
+			break;
+		}
+		case 4:
+		{
+			startchat();
+			break;
+		}
+		case 5:
+		{
+			groupchat();
+			break;
+		}
 	}
 }
 }
@@ -409,6 +386,7 @@ int main()
 	pthread_mutex_t mut;
 	pthread_mutex_init(&mut,NULL);
 	thread_create();
+	loginaccount();
 	loop();
 
 

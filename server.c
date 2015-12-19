@@ -448,10 +448,7 @@ void groupchat()
 			{
 				perror("send");
 			}
-			else
-			{
-				free(buf);
-			}
+			free(buf);
 		}
 	}
 }
@@ -510,7 +507,6 @@ void *looprecv()
 				}
 				else
 				{
-
 					BUF = buffer__unpack(NULL, numbytes, buf);
 					symbol = 1;
 				}
@@ -586,6 +582,7 @@ while(1)
 				{
 					addfriend();
 					symbol = 0;
+					printf("哈 = %s\n",BUF->buf);
 					break;
 				}
 			case 3:
