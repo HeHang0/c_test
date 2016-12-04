@@ -103,7 +103,7 @@ void loginaccount()
 {
 while(1)
 {
-	if((symbol == 1) && (bcmp(BUF->buf,"Login success!",14) == 0))
+	if((symbol == 1) && (strcmp(BUF->buf,"Login success!",14) == 0))
 	{
 		symbol = 0;
 			break;
@@ -216,7 +216,7 @@ if(strlen(writebuf) > 0)
 		perror("send");
 		exit(1);
 	}
-	else if(bcmp(writebuf,"exit",4) == 0)	
+	else if(strcmp(writebuf,"exit",4) == 0)	
 		symbol = 0;
 	free(buf);
 }
@@ -239,7 +239,7 @@ if(strlen(writebuf) > 0)
 		perror("send");
 		exit(1);
 	}
-	else if(bcmp(writebuf,"exit",4) == 0)
+	else if(strcmp(writebuf,"exit",4) == 0)
 		symbol = 0;
 	free(buf);
 }
@@ -311,12 +311,12 @@ while(1)
 	len = strlen(writebuf);
 	writebuf[len] = '\0';
 
-	if(bcmp(writebuf,"/add",4) == 0)
+	if(strcmp(writebuf,"/add",4) == 0)
 	{
 		symbol = 2;
 		bzero(writebuf,MAXDATESIZE);
 	}
-	else if(bcmp(writebuf,"/chat",5) == 0)
+	else if(strcmp(writebuf,"/chat",5) == 0)
 	{
 		symbol = 3;
 		bzero(writebuf,MAXDATESIZE);
@@ -327,7 +327,7 @@ while(1)
 		printf("Start chat:");
 		bzero(writebuf,MAXDATESIZE);
 	}
-	else if(bcmp(writebuf,"/groupchat",10) == 0)
+	else if(strcmp(writebuf,"/groupchat",10) == 0)
 	{
 		symbol = 5;
 		printf("Start groupchat:");
